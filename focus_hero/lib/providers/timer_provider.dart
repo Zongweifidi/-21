@@ -34,9 +34,7 @@ class TimerProvider with ChangeNotifier {
       await prefs.setBool('isTimerActive', false);
     }
 
-    FlutterForegroundTask.receivePort?.listen((message) {
-      _onReceiveTaskData(message);
-    });
+    FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
 
     await _loadStats();
   }

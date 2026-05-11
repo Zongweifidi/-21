@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:isolate';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,28 +13,28 @@ class TimerHandler extends TaskHandler {
   Timer? _timer;
 
   @override
-  void onStart(DateTime timestamp, SendPort? sendPort) async {
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     final prefs = await SharedPreferences.getInstance();
     _secondsRemaining = prefs.getInt('secondsRemaining') ?? 0;
     _mode = prefs.getString('timerMode') ?? 'focus';
 
-    _startTimer(sendPort);
+    _startTimer();
   }
 
-  void _startTimer(SendPort? sendPort) {
+  void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsRemaining > 0) {
         _secondsRemaining--;
-        _updateNotification(sendPort);
+        _updateNotification();
         _saveState();
       } else {
-        _onFinished(sendPort);
+        _onFinished();
         timer.cancel();
       }
     });
   }
 
-  void _updateNotification(SendPort? sendPort) {
+  void _updateNotification() {
     String title = _mode == 'focus' ? '正在专注中...' : '休息时间';
     int minutes = _secondsRemaining ~/ 60;
     int seconds = _secondsRemaining % 60;
@@ -47,7 +46,7 @@ class TimerHandler extends TaskHandler {
     );
 
     // Send data to main isolate
-    sendPort?.send(_secondsRemaining);
+    FlutterForegroundTask.sendDataToMain(_secondsRemaining);
   }
 
   Future<void> _saveState() async {
@@ -55,19 +54,19 @@ class TimerHandler extends TaskHandler {
     await prefs.setInt('secondsRemaining', _secondsRemaining);
   }
 
-  void _onFinished(SendPort? sendPort) {
+  void _onFinished() {
     FlutterForegroundTask.updateService(
       notificationTitle: '时间到！',
       notificationText: _mode == 'focus' ? '太棒了，完成了一个番茄！' : '休息结束，准备开始下一个番茄吗？',
     );
-    sendPort?.send(-1); // -1 signifies finished
+    FlutterForegroundTask.sendDataToMain(-1); // -1 signifies finished
   }
 
   @override
-  void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {}
+  void onRepeatEvent(DateTime timestamp) async {}
 
   @override
-  void onDestroy(DateTime timestamp, SendPort? sendPort) {
+  Future<void> onDestroy(DateTime timestamp) async {
     _timer?.cancel();
   }
 }
@@ -81,20 +80,13 @@ class TimerService {
         channelDescription: 'Countdown timer for focus sessions',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        iconData: const NotificationIconData(
-          resType: ResourceType.mipmap,
-          resPrefix: ResourcePrefix.ic,
-          name: 'launcher',
-        ),
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: true,
         playSound: false,
       ),
-      foregroundTaskOptions: const ForegroundTaskOptions(
-        interval: 5000,
-        isOnceEvent: false,
-        autoRunOnBoot: false,
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.nothing(),
         allowWakeLock: true,
         allowWifiLock: true,
       ),
