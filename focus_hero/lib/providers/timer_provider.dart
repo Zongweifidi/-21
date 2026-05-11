@@ -90,7 +90,7 @@ class TimerProvider with ChangeNotifier {
     await prefs.setBool("isTimerActive", false);
     await TimerService.stop();
     _isRunning = false;
-    if (await Vibration.hasVibrator() ?? false) {
+    if (await Vibration.hasVibrator()) {
       Vibration.vibrate(duration: 1000);
     }
 
