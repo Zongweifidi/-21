@@ -9,7 +9,7 @@ void startCallback() {
 
 class TimerHandler extends TaskHandler {
   int _secondsRemaining = 0;
-  String _mode = 'focus'; // focus, shortBreak, longBreak
+  String _mode = 'focus';
   Timer? _timer;
 
   @override
@@ -21,12 +21,27 @@ class TimerHandler extends TaskHandler {
     _startTimer();
   }
 
+  @override
+  void onReceiveData(Object data) {
+    if (data is Map<String, dynamic>) {
+       if (data.containsKey('secondsRemaining')) {
+         _secondsRemaining = data['secondsRemaining'];
+       }
+       if (data.containsKey('mode')) {
+         _mode = data['mode'];
+       }
+    }
+  }
+
   void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsRemaining > 0) {
         _secondsRemaining--;
         _updateNotification();
-        _saveState();
+        if (_secondsRemaining % 10 == 0) {
+           _saveState();
+        }
       } else {
         _onFinished();
         timer.cancel();
@@ -45,7 +60,6 @@ class TimerHandler extends TaskHandler {
       notificationText: "剩余时间: $timeStr",
     );
 
-    // Send data to main isolate
     FlutterForegroundTask.sendDataToMain(_secondsRemaining);
   }
 
@@ -55,11 +69,14 @@ class TimerHandler extends TaskHandler {
   }
 
   void _onFinished() {
+    String finishTitle = _mode == 'focus' ? '专注完成！' : '休息结束！';
+    String finishText = _mode == 'focus' ? '太棒了，完成了一个番茄！' : '准备开始下一个番茄吗？';
+
     FlutterForegroundTask.updateService(
-      notificationTitle: '时间到！',
-      notificationText: _mode == 'focus' ? '太棒了，完成了一个番茄！' : '休息结束，准备开始下一个番茄吗？',
+      notificationTitle: finishTitle,
+      notificationText: finishText,
     );
-    FlutterForegroundTask.sendDataToMain(-1); // -1 signifies finished
+    FlutterForegroundTask.sendDataToMain(-1);
   }
 
   @override
@@ -68,6 +85,7 @@ class TimerHandler extends TaskHandler {
   @override
   Future<void> onDestroy(DateTime timestamp) async {
     _timer?.cancel();
+    await _saveState();
   }
 }
 
@@ -100,11 +118,14 @@ class TimerService {
     await prefs.setBool('isTimerActive', true);
 
     if (await FlutterForegroundTask.isRunningService) {
-      // Just update if already running
+      FlutterForegroundTask.sendDataToTask({
+        'secondsRemaining': seconds,
+        'mode': mode,
+      });
     } else {
       await FlutterForegroundTask.startService(
-        notificationTitle: '准备开始',
-        notificationText: '倒计时即将开始',
+        notificationTitle: '专注英雄',
+        notificationText: '计时器准备中...',
         callback: startCallback,
       );
     }

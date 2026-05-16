@@ -26,17 +26,22 @@ class TimerProvider with ChangeNotifier {
 
   Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
-    bool wasActive = prefs.getBool('isTimerActive') ?? false;
-    String? lastMode = prefs.getString('timerMode');
-
-    if (wasActive && lastMode == 'focus') {
-      await _gamificationService.completeSession(0, true);
-      await prefs.setBool('isTimerActive', false);
-    }
 
     FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
 
+    bool isServiceRunning = await FlutterForegroundTask.isRunningService;
+    if (isServiceRunning) {
+      _isRunning = true;
+      _mode = prefs.getString('timerMode') ?? 'focus';
+      _secondsRemaining = prefs.getInt('secondsRemaining') ?? (_mode == 'focus' ? 25 * 60 : 5 * 60);
+    } else {
+      _isRunning = false;
+      _mode = 'focus';
+      _secondsRemaining = 25 * 60;
+    }
+
     await _loadStats();
+    notifyListeners();
   }
 
   void _onReceiveTaskData(dynamic data) {
@@ -62,8 +67,8 @@ class TimerProvider with ChangeNotifier {
     _isRunning = true;
     int duration = _mode == 'focus' ? 25 * 60 : (_mode == 'shortBreak' ? 5 * 60 : 15 * 60);
     _secondsRemaining = duration;
-    await TimerService.start(_secondsRemaining, _mode);
     notifyListeners();
+    await TimerService.start(_secondsRemaining, _mode);
   }
 
   Future<void> stopTimer({bool abandoned = false}) async {
@@ -71,12 +76,16 @@ class TimerProvider with ChangeNotifier {
     await TimerService.stop();
 
     if (abandoned && _mode == 'focus') {
-      await _gamificationService.completeSession(0, true);
+      await _gamificationService.completeSession(25, true);
     }
 
+    _resetToCurrentMode();
+    notifyListeners();
+  }
+
+  void _resetToCurrentMode() {
     int duration = _mode == 'focus' ? 25 * 60 : (_mode == 'shortBreak' ? 5 * 60 : 15 * 60);
     _secondsRemaining = duration;
-    notifyListeners();
   }
 
   void handleAppLifecycle(AppLifecycleState state) {
@@ -90,7 +99,9 @@ class TimerProvider with ChangeNotifier {
     await prefs.setBool("isTimerActive", false);
     await TimerService.stop();
     _isRunning = false;
-    if (await Vibration.hasVibrator()) {
+
+    bool? hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator == true) {
       Vibration.vibrate(duration: 1000);
     }
 
@@ -100,18 +111,15 @@ class TimerProvider with ChangeNotifier {
 
       if (_completedToday % 4 == 0) {
         _mode = 'longBreak';
-        _secondsRemaining = 15 * 60;
       } else {
         _mode = 'shortBreak';
-        _secondsRemaining = 5 * 60;
       }
-
       _lastSessionResult = result;
     } else {
       _mode = 'focus';
-      _secondsRemaining = 25 * 60;
     }
 
+    _resetToCurrentMode();
     notifyListeners();
   }
 
